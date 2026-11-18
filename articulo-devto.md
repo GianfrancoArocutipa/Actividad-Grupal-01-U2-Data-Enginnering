@@ -1,36 +1,36 @@
 ---
-title: "De la API Sísmica del USGS a un Observatorio Público Andino con dbt, DuckDB y GitHub Actions"
+title: "From the USGS Seismic API to a Public Andean Observatory with dbt, DuckDB, and GitHub Actions"
 published: true
-description: "Construimos un pipeline ELT libre de AWS para analizar 1.043 sismos del Cinturón Andino en 2025 con Python, DuckDB y dbt Core, desplegado automáticamente en GitHub Pages."
+description: "Building a zero-AWS ELT batch pipeline to analyze 1,043 Andean earthquakes in 2025 with Python, DuckDB, and dbt Core, automatically deployed to GitHub Pages."
 tags: dataengineering, dbt, duckdb, githubactions
 ---
 
-¿Cómo varía la frecuencia y la profundidad de los sismos a lo largo de la zona de subducción sudamericana? Mientras que algunos segmentos liberan energía cerca de la superficie, otros concentran su actividad a más de 100 kilómetros de profundidad. Para responder esa pregunta con datos reproducibles construimos **Sismos Andes**, un pipeline batch de ingeniería de datos que consulta el catálogo del Servicio Geológico de los Estados Unidos (**USGS**), transforma y valida los registros con **DuckDB** y **dbt Core**, y publica automáticamente un observatorio web junto con su dataset en CSV.
+How do earthquake frequency and hypocentral depth vary along the South American subduction zone? While some tectonic segments release energy near the surface, others concentrate seismic activity more than 100 kilometers underground. To explore this question with reproducible data, we built **Sismos Andes**, a zero-AWS data engineering batch pipeline that queries the United States Geological Survey (**USGS**) catalog, transforms and validates records with **DuckDB** and **dbt Core**, and automatically publishes a static web observatory along with its monthly CSV dataset.
 
-[Ver el observatorio en vivo](https://gianfrancoarocutipa.github.io/Actividad-Grupal-01-U2-Data-Enginnering/) · [Explorar el repositorio público](https://github.com/GianfrancoArocutipa/Actividad-Grupal-01-U2-Data-Enginnering) · [Ver el workflow de CI/CD](https://github.com/GianfrancoArocutipa/Actividad-Grupal-01-U2-Data-Enginnering/actions/workflows/pages.yml)
-
----
-
-## 1. De la API de USGS al almacenamiento analítico en DuckDB
-
-El script `pipeline.py` divide el margen convergente sudamericano en cuatro corredores latitudinales que cubren desde los 46°S hasta los 2°N:
-
-- **Andes Norte** (`8°S a 2°N`): subducción ecuatorial y norte del Perú.
-- **Andes Central** (`16°S a 8°S`): margen central peruano y dorsal de Nazca.
-- **Andes Sur** (`26°S a 16°S`): codo de Arica, Altiplano y fosa peruano-chilena.
-- **Andes Austral** (`46°S a 26°S`): segmento centro-sur de Chile.
-
-Para cada corredor consultamos el endpoint FDSNWS (`https://earthquake.usgs.gov/fdsnws/event/1/query`) filtrando los eventos de 2025 con magnitud mínima de `4.0 Mw` en formato GeoJSON.
-
-Antes de cargar cualquier fila en la base de datos, Python verifica que la respuesta sea una colección GeoJSON válida, que cada evento posea un identificador único (`id`), marca temporal en milisegundos UTC, magnitud y un vector tridimensional de coordenadas `[longitud, latitud, profundidad_km]`. Si un registro viene truncado, el proceso falla inmediatamente.
-
-Los **1.043 eventos sísmicos** extraídos se insertan en la tabla `raw.earthquakes` dentro de una instancia efímera de **DuckDB**. Recrear la base en cada corrida garantiza idempotencia sin depender de servicios de almacenamiento en AWS.
+[Live Observatory (GitHub Pages)](https://gianfrancoarocutipa.github.io/Actividad-Grupal-01-U2-Data-Enginnering/) · [Public GitHub Repository](https://github.com/GianfrancoArocutipa/Actividad-Grupal-01-U2-Data-Enginnering) · [CI/CD Deployment Workflow](https://github.com/GianfrancoArocutipa/Actividad-Grupal-01-U2-Data-Enginnering/actions/workflows/pages.yml)
 
 ---
 
-## 2. Normalización y clasificación geofísica en `stg_earthquakes`
+## 1. From the USGS FDSNWS API to Analytical Storage in DuckDB
 
-El primer modelo de dbt (`dbt/models/stg_earthquakes.sql`) limpia la capa cruda, elimina posibles duplicados en bordes geográficos mediante `row_number() over (partition by event_id ...)` y clasifica cada terremoto según su régimen hipocentral y su nivel de magnitud:
+In [`pipeline.py`](https://github.com/GianfrancoArocutipa/Actividad-Grupal-01-U2-Data-Enginnering/blob/main/pipeline.py), we divide the South American convergent margin into four latitudinal corridors spanning from 46°S to 2°N:
+
+- **Andes Norte** (`8°S to 2°N`): Ecuadorian and Northern Peru subduction zone.
+- **Andes Central** (`16°S to 8°S`): Central Peruvian margin and Nazca Ridge interface.
+- **Andes Sur** (`26°S to 16°S`): Arica Bend, Altiplano, and Peru–Chile Trench.
+- **Andes Austral** (`46°S to 26°S`): Central–Southern Chile segment.
+
+For each corridor, Python queries the public USGS FDSNWS endpoint (`https://earthquake.usgs.gov/fdsnws/event/1/query`), filtering all 2025 seismic events with a minimum magnitude of `4.0 Mw` in GeoJSON format.
+
+Before loading a single row into the database, our ingestion layer validates that the payload is a well-formed GeoJSON `FeatureCollection` and that every event contains a unique identifier (`id`), a valid UTC epoch timestamp, a magnitude reading, and a 3D coordinate vector `[longitude, latitude, depth_km]`. If any record is malformed, the ingestion fails fast.
+
+All **1,043 seismic events** extracted across the four corridors are loaded into `raw.earthquakes` inside an ephemeral **DuckDB** instance. Re-creating the embedded analytical database on every execution guarantees idempotency without relying on AWS S3 or Redshift.
+
+---
+
+## 2. Normalization and Geophysical Classification in `stg_earthquakes`
+
+Our first dbt model ([`dbt/models/stg_earthquakes.sql`](https://github.com/GianfrancoArocutipa/Actividad-Grupal-01-U2-Data-Enginnering/blob/main/dbt/models/stg_earthquakes.sql)) cleans the raw layer, deduplicates boundary events using `row_number() over (partition by event_id ...)`, and classifies each earthquake by its hypocentral depth regime and magnitude tier:
 
 ```sql
 case
@@ -45,13 +45,13 @@ case
 end as magnitude_tier
 ```
 
-Esta distinción es clave en sismología andina: los sismos superficiales (`< 70 km`) ocurren cerca del contacto interplaca o en fallas corticales, mientras que los intermedios (`70–300 km`) reflejan la deformación interna de la placa de Nazca al hundirse bajo el continente.
+This geophysical distinction is essential in Andean seismology: shallow earthquakes (`< 70 km`) occur near the interplate contact or upper crustal faults, whereas intermediate-depth events (`70–300 km`) reflect internal slab deformation within the subducting Nazca plate.
 
 ---
 
-## 3. Agregación mensual en `mart_seismic_monthly`
+## 3. Monthly Aggregation in `mart_seismic_monthly`
 
-En `dbt/models/mart_seismic_monthly.sql`, usamos `ref('stg_earthquakes')` y cruzamos los corredores con la serie completa de doce meses de 2025 (`generate_series`). De esa forma aseguramos que el modelo final tenga exactamente **48 filas** (4 corredores × 12 meses) incluso si algún corredor tuviera un mes sin eventos:
+In [`dbt/models/mart_seismic_monthly.sql`](https://github.com/GianfrancoArocutipa/Actividad-Grupal-01-U2-Data-Enginnering/blob/main/dbt/models/mart_seismic_monthly.sql), we reference `{{ ref('stg_earthquakes') }}` and cross-join the distinct corridors with a complete 12-month calendar series (`generate_series`). This guarantees that our analytical mart always outputs an exact grid of **48 rows** (4 corridors × 12 months):
 
 ```sql
 select
@@ -69,16 +69,16 @@ from {{ ref('stg_earthquakes') }}
 group by zone, month
 ```
 
-Los resultados de 2025 muestran un contraste notable entre segmentos:
-- **Andes Sur** concentró más de la mitad de la actividad (**558 sismos**, con 24 eventos `≥ 5,0 Mw`), dominada abrumadoramente por sismos de profundidad intermedia (**492 intermedios** frente a 66 superficiales) bajo el Altiplano y la fosa norte chilena.
-- **Andes Austral** registró **270 sismos** y el evento de mayor magnitud del año (**6,4 Mw**), pero con predominio superficial (**183 superficiales**).
-- **Andes Central** acumuló **127 sismos** (incluyendo los únicos **3 sismos profundos** `≥ 300 km` del catálogo) y **Andes Norte** sumó **88 sismos** con un pico de **6,3 Mw**.
+The 2025 metrics reveal a sharp structural contrast across the Andean margin:
+- **Andes Sur** accounted for more than half of all seismic activity (**558 earthquakes**, including 24 events `≥ 5.0 Mw`), overwhelmingly dominated by intermediate-depth seismicity (**492 intermediate** vs. 66 shallow events) beneath the Altiplano and Northern Chile trench.
+- **Andes Austral** recorded **270 earthquakes** and the strongest event of the year (**6.4 Mw**), driven primarily by shallow interplate activity (**183 shallow events**).
+- **Andes Central** accumulated **127 earthquakes** (including the only **3 deep-focus earthquakes** `≥ 300 km` in the catalog), while **Andes Norte** registered **88 earthquakes** with a peak magnitude of **6.3 Mw**.
 
 ---
 
-## 4. Pruebas de calidad de datos que bloquean despliegues defectuosos
+## 4. Data Quality Gates that Block Broken Deployments
 
-Ejecutar `dbt build` compila los modelos y corre **13 pruebas automatizadas** (definidas en `schema.yml` y en `dbt/tests/`). Además de validar unicidad y ausencia de nulos en `event_id` y `zone_month`, escribimos pruebas singulares en SQL para verificar invariantes físicos y contables:
+Running `dbt build` compiles our SQL models and executes **13 automated data tests** defined in [`dbt/models/schema.yml`](https://github.com/GianfrancoArocutipa/Actividad-Grupal-01-U2-Data-Enginnering/blob/main/dbt/models/schema.yml) and `dbt/tests/`. Beyond enforcing `not_null` and `unique` constraints on `event_id` and `zone_month`, we wrote singular SQL tests to enforce physical and accounting invariants:
 
 ```sql
 -- dbt/tests/consistent_depth_breakdown.sql
@@ -89,22 +89,22 @@ where (shallow_events + intermediate_events + deep_events) <> total_events
    or (total_events > 0 and max_magnitude < avg_magnitude)
 ```
 
-Otra prueba (`valid_seismic_metrics.sql`) verifica que las magnitudes, profundidades y coordenadas se mantengan dentro de límites geofísicos válidos, y `complete_zones_months.sql` exige los 48 registros exactos. Si cualquiera de las 13 pruebas devuelve una sola fila anómala, `dbt build` termina con código de error y detiene la generación del sitio.
+In addition, [`valid_seismic_metrics.sql`](https://github.com/GianfrancoArocutipa/Actividad-Grupal-01-U2-Data-Enginnering/blob/main/dbt/tests/valid_seismic_metrics.sql) asserts that magnitudes, depths, and bounding-box coordinates stay within valid geophysical ranges, and [`complete_zones_months.sql`](https://github.com/GianfrancoArocutipa/Actividad-Grupal-01-U2-Data-Enginnering/blob/main/dbt/tests/complete_zones_months.sql) verifies the exact 48-row monthly grid. If any of the 13 tests returns a single failing row, `dbt build` exits with a non-zero code and halts the site generation before deployment.
 
 ---
 
-## 5. Automatización CI/CD con GitHub Actions y GitHub Pages
+## 5. Automated CI/CD with GitHub Actions and GitHub Pages (Zero AWS)
 
-El flujo `.github/workflows/pages.yml` automatiza todo el ciclo sin servidores propios ni recursos de AWS:
+Our workflow ([`.github/workflows/pages.yml`](https://github.com/GianfrancoArocutipa/Actividad-Grupal-01-U2-Data-Enginnering/blob/main/.github/workflows/pages.yml)) automates the entire delivery lifecycle without custom servers or AWS dependencies:
 
-1. **Integración Continua (`build`)**: En cada push, pull request o ejecución programada (`cron`), instala dependencias, ejecuta las pruebas unitarias con `pytest` y corre `python pipeline.py` (que extrae de USGS, ejecuta `dbt build` sobre DuckDB y genera la carpeta `site/`).
-2. **Despliegue Continuo (`deploy`)**: En la rama `main`, el segundo job (`needs: build`) toma el artefacto con `index.html`, `styles.css` y `sismos-mensual.csv` y lo publica en **GitHub Pages** mediante `actions/deploy-pages@v4`.
+1. **Continuous Integration (`build` job)**: On every push, pull request, or scheduled weekly cron run, GitHub Actions installs pinned dependencies, runs unit tests with `pytest`, and executes `python pipeline.py` (which queries USGS, runs `dbt build` on DuckDB, and outputs the static `site/` artifact).
+2. **Continuous Deployment (`deploy` job)**: On the `main` branch, a second job (`needs: build`) publishes the verified `index.html`, `styles.css`, and `sismos-mensual.csv` artifact directly to **GitHub Pages** via `actions/deploy-pages@v4`.
 
 ---
 
-## 6. Reproducir el proyecto localmente
+## 6. Reproduce the Pipeline Locally
 
-Puedes clonar el repositorio y ejecutar las pruebas y el pipeline completo en menos de un minuto con Python 3.11+:
+Clone the repository and run both the test suite and the end-to-end ELT pipeline in under a minute using Python 3.11+:
 
 ```bash
 git clone https://github.com/GianfrancoArocutipa/Actividad-Grupal-01-U2-Data-Enginnering.git
@@ -116,4 +116,4 @@ python3.11 -m venv .venv
 .venv/bin/python -m http.server 8000 --directory site
 ```
 
-Al abrir `http://localhost:8000` tendrás el observatorio interactivo con las barras comparativas de frecuencia sísmica, el desglose por régimen hipocentral, la tabla de los 8 terremotos más fuertes de 2025 y la descarga directa del archivo `sismos-mensual.csv`.
+Open `http://localhost:8000` in your browser to explore the interactive seismic dashboard, compare monthly frequency bars and depth breakdowns across the four Andean corridors, inspect the top 8 earthquakes of 2025, and download `sismos-mensual.csv`.
