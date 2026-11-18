@@ -1,0 +1,6 @@
+name: sismos_andes
+version: '1.0.0'
+config-version: 2
+profile: sismos_andes
+model-paths: ['models']
+test-paths: ['tests']

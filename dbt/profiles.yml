@@ -1,0 +1,8 @@
+sismos_andes:
+  target: local
+  outputs:
+    local:
+      type: duckdb
+      path: "{{ env_var('SISMOS_DUCKDB_PATH') }}"
+      schema: analytics
+      threads: 1

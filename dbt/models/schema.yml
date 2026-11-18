@@ -1,0 +1,31 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: earthquakes
+
+models:
+  - name: stg_earthquakes
+    description: Eventos sísmicos normalizados del Cordón Andino con clasificación de profundidad hipocentral y categoría de magnitud.
+    columns:
+      - name: event_id
+        data_tests: [not_null, unique]
+      - name: zone
+        data_tests: [not_null]
+      - name: magnitude
+        data_tests: [not_null]
+      - name: depth_km
+        data_tests: [not_null]
+  - name: mart_seismic_monthly
+    description: Resumen mensual de actividad sísmica por corredor andino (magnitud media, máxima, profundidad y conteos por estrato).
+    columns:
+      - name: zone_month
+        data_tests: [not_null, unique]
+      - name: zone
+        data_tests: [not_null]
+      - name: month
+        data_tests: [not_null]
+      - name: total_events
+        data_tests: [not_null]
